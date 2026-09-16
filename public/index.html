@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#121212">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>PocketFM Mobile</title>
+  <title>Audiobook Mobile</title>
   <style>
     :root {
       --bg-dark: #121212;
@@ -169,7 +169,7 @@
 <body>
 
   <header>
-    <div class="logo">POCKET FM</div>
+    <div class="logo">Best Audio Books</div>
   </header>
 
   <div class="container">
@@ -209,7 +209,7 @@
       <img id="miniCover" src="/api/stories/fallback/cover" alt="Cover">
       <div>
         <div class="mini-title" id="miniTrack">Select Track</div>
-        <div class="mini-story" id="miniStory">PocketFM</div>
+        <div class="mini-story" id="miniStory">Audiobook</div>
       </div>
     </div>
     <button class="mini-play-btn" id="miniPlayBtn" onclick="event.stopPropagation(); togglePlay();">PLAY</button>
@@ -255,7 +255,7 @@
   <script>
     const audio = new Audio();
     let stories = [], currentStory = null, currentEpisodeIndex = -1;
-    let unlockedTokens = JSON.parse(sessionStorage.getItem('pocketfm_tokens') || '{}');
+    let unlockedTokens = JSON.parse(sessionStorage.getItem('Audiobook_tokens') || '{}');
     let pendingUnlockStory = null;
 
     async function fetchStories() {
@@ -331,7 +331,7 @@
       const data = await res.json();
       if (data.success) {
         unlockedTokens[pendingUnlockStory.id] = data.token;
-        sessionStorage.setItem('pocketfm_tokens', JSON.stringify(unlockedTokens));
+        sessionStorage.setItem('Audiobook_tokens', JSON.stringify(unlockedTokens));
         closePinModal();
         renderStories();
         openStory(pendingUnlockStory.id);
