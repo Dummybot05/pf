@@ -1,0 +1,12 @@
+{
+  "name": "pocketfm-audio-player",
+  "version": "1.0.0",
+  "description": "PocketFM-inspired Audio Player with Express dynamic fs scanning and range streaming",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

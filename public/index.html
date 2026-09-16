@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#121212">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>PocketFM Mobile</title>
+  <style>
+    :root {
+      --bg-dark: #121212;
+      --card-bg: #1E1E1E;
+      --card-hover: #282828;
+      --accent-red: #FF334B;
+      --text-main: #FFFFFF;
+      --text-muted: #A0A0A0;
+      --border-color: #2A2A2A;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding-bottom: calc(85px + var(--safe-bottom));
+      user-select: none;
+    }
+
+    /* Mobile Header */
+    header {
+      background: rgba(18, 18, 18, 0.95);
+      border-bottom: 1px solid var(--border-color);
+      padding: 14px 16px;
+      position: sticky; top: 0; z-index: 10;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .logo {
+      font-size: 1.1rem; font-weight: 900; color: var(--accent-red); letter-spacing: 1.5px;
+    }
+
+    .container { padding: 16px; }
+    .section-title { font-size: 1rem; font-weight: 800; margin-bottom: 14px; letter-spacing: 0.5px; color: var(--text-muted); }
+
+    /* Mobile Grid */
+    .stories-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+    .story-card {
+      background: var(--card-bg);
+      border-radius: 12px; overflow: hidden;
+      border: 1px solid var(--border-color);
+      position: relative;
+    }
+    .cover-wrapper { position: relative; width: 100%; padding-top: 100%; }
+    .cover-wrapper img {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%; object-fit: cover;
+    }
+    .badge-lock {
+      position: absolute; top: 8px; right: 8px;
+      background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(4px);
+      padding: 3px 6px; border-radius: 4px;
+      font-size: 0.65rem; font-weight: 800; letter-spacing: 0.5px;
+    }
+    .badge-lock.locked { color: var(--accent-red); }
+    .badge-lock.unlocked { color: #00E676; }
+    .story-info { padding: 10px; }
+    .story-title { font-weight: 700; font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .story-author { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+
+    /* Mobile Drawer */
+    .drawer {
+      position: fixed; top: 0; right: -100%;
+      width: 100%; height: 100%; background: #181818;
+      z-index: 100; transition: right 0.25s ease-in-out;
+      display: flex; flex-direction: column;
+    }
+    .drawer.open { right: 0; }
+    .drawer-header {
+      padding: 16px; border-bottom: 1px solid var(--border-color);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .episode-list { flex: 1; overflow-y: auto; padding: 12px; }
+    .episode-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 10px; border-bottom: 1px solid var(--border-color);
+    }
+    .play-tag {
+      font-size: 0.7rem; font-weight: 800; color: var(--accent-red);
+      background: rgba(255, 51, 75, 0.1); padding: 4px 8px; border-radius: 4px; letter-spacing: 0.5px;
+    }
+
+    /* Mobile Mini Player Bar */
+    .mini-player {
+      position: fixed; bottom: 0; left: 0; width: 100%;
+      background: #1C1C1E; border-top: 1px solid var(--border-color);
+      padding: 10px 16px calc(10px + var(--safe-bottom));
+      display: flex; align-items: center; justify-content: space-between;
+      z-index: 90; cursor: pointer;
+    }
+    .mini-info { display: flex; align-items: center; gap: 10px; width: 65%; }
+    .mini-info img { width: 42px; height: 42px; border-radius: 6px; object-fit: cover; }
+    .mini-title { font-weight: 600; font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mini-story { font-size: 0.72rem; color: var(--text-muted); }
+    .mini-play-btn {
+      background: var(--accent-red); border: none; color: #fff;
+      font-size: 0.75rem; font-weight: 800; padding: 8px 16px; border-radius: 20px;
+      letter-spacing: 1px; cursor: pointer;
+    }
+
+    /* Full Screen Player View */
+    .full-player {
+      position: fixed; top: 100%; left: 0; width: 100%; height: 100%;
+      background: #121212; z-index: 150;
+      transition: top 0.3s cubic-bezier(0.1, 0.9, 0.2, 1);
+      display: flex; flex-direction: column; justify-content: space-between;
+      padding: 24px 24px calc(24px + var(--safe-bottom));
+    }
+    .full-player.active { top: 0; }
+    .full-cover { width: 100%; max-width: 300px; aspect-ratio: 1; margin: 20px auto; border-radius: 16px; overflow: hidden; }
+    .full-cover img { width: 100%; height: 100%; object-fit: cover; }
+    
+    .full-controls {
+      display: flex; align-items: center; justify-content: space-between;
+      margin: 20px 0; padding: 0 10px;
+    }
+    .full-ctrl-btn {
+      background: none; border: none; color: #fff;
+      font-size: 0.8rem; font-weight: 800; letter-spacing: 0.5px; cursor: pointer;
+    }
+    .full-play-btn {
+      background: var(--accent-red); color: #fff;
+      font-size: 0.9rem; font-weight: 900; letter-spacing: 1.5px;
+      padding: 14px 28px; border-radius: 28px; border: none;
+    }
+    
+    .progress-box { width: 100%; margin: 10px 0; }
+    .seek-bar { width: 100%; accent-color: var(--accent-red); }
+    .time-stamps { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; font-weight: 600; }
+
+    .text-btn {
+      background: none; border: none; color: var(--text-muted);
+      font-size: 0.75rem; font-weight: 800; cursor: pointer; letter-spacing: 1px;
+    }
+
+    /* PIN Overlay */
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.9); z-index: 200; display: none;
+      align-items: center; justify-content: center; padding: 20px;
+    }
+    .modal-overlay.active { display: flex; }
+    .pin-card { background: var(--card-bg); border-radius: 16px; padding: 24px; width: 100%; text-align: center; }
+    .pin-input {
+      width: 100%; padding: 12px; font-size: 1.4rem; letter-spacing: 8px;
+      text-align: center; background: #121212; border: 1px solid var(--border-color);
+      color: #fff; border-radius: 8px; margin: 16px 0;
+    }
+    .btn-red {
+      width: 100%; padding: 14px; background: var(--accent-red);
+      color: #fff; border: none; border-radius: 8px; font-weight: 800; letter-spacing: 1px;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo">POCKET FM</div>
+  </header>
+
+  <div class="container">
+    <h2 class="section-title">AUDIO STORIES</h2>
+    <div class="stories-grid" id="storiesGrid"></div>
+  </div>
+
+  <!-- Episode Drawer -->
+  <div class="drawer" id="episodeDrawer">
+    <div class="drawer-header">
+      <div>
+        <h3 id="drawerTitle">Story Title</h3>
+        <p id="drawerAuthor" style="font-size:0.75rem; color:var(--text-muted); margin-top:2px;"></p>
+      </div>
+      <button class="text-btn" onclick="closeDrawer()">CLOSE</button>
+    </div>
+    <div class="episode-list" id="episodeList"></div>
+  </div>
+
+  <!-- PIN Modal -->
+  <div class="modal-overlay" id="pinModal" onclick="closePinModal()">
+    <div class="pin-card" onclick="event.stopPropagation()">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h3 style="font-size:0.9rem; letter-spacing:0.5px;">ENTER STORY PIN</h3>
+        <button class="text-btn" onclick="closePinModal()">CANCEL</button>
+      </div>
+      <p style="font-size:0.8rem; color:var(--text-muted);" id="pinStoryTitle"></p>
+      <input type="tel" maxlength="6" id="pinInput" class="pin-input" placeholder="••••" />
+      <p id="pinError" style="color:var(--accent-red); font-size:0.8rem; margin-bottom:10px; display:none;"></p>
+      <button class="btn-red" onclick="submitPin()">UNLOCK & PLAY</button>
+    </div>
+  </div>
+
+  <!-- Mini Player Bar -->
+  <div class="mini-player" onclick="expandPlayer()">
+    <div class="mini-info">
+      <img id="miniCover" src="/api/stories/fallback/cover" alt="Cover">
+      <div>
+        <div class="mini-title" id="miniTrack">Select Track</div>
+        <div class="mini-story" id="miniStory">PocketFM</div>
+      </div>
+    </div>
+    <button class="mini-play-btn" id="miniPlayBtn" onclick="event.stopPropagation(); togglePlay();">PLAY</button>
+  </div>
+
+  <!-- Full Screen Player View -->
+  <div class="full-player" id="fullPlayer">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <button class="text-btn" onclick="collapsePlayer()">CLOSE</button>
+      <span style="font-size:0.75rem; font-weight:800; color:var(--text-muted); letter-spacing:1px;">NOW PLAYING</span>
+      <select style="background:#222; color:#fff; border:none; padding:4px 8px; border-radius:6px; font-size:0.75rem; font-weight:700;" id="speedSelect" onchange="changeSpeed()">
+        <option value="1">1.0x</option>
+        <option value="1.25">1.25x</option>
+        <option value="1.5">1.5x</option>
+        <option value="2">2.0x</option>
+      </select>
+    </div>
+
+    <div class="full-cover"><img id="fullCover" src="/api/stories/fallback/cover" alt="Cover"></div>
+
+    <div>
+      <h2 id="fullTrack" style="font-size:1.1rem; text-align:center; font-weight:800;">Track Title</h2>
+      <p id="fullStory" style="font-size:0.8rem; color:var(--text-muted); text-align:center; margin-top:4px; font-weight:600;"></p>
+
+      <div class="progress-box">
+        <input type="range" class="seek-bar" id="seekBar" value="0" max="100" oninput="onSeek()">
+        <div class="time-stamps">
+          <span id="currentTime">00:00</span>
+          <span id="duration">00:00</span>
+        </div>
+      </div>
+
+      <div class="full-controls">
+        <button class="full-ctrl-btn" onclick="prevEpisode()">PREV</button>
+        <button class="full-ctrl-btn" onclick="skipTime(-10)">-10s</button>
+        <button class="full-ctrl-btn full-play-btn" id="fullPlayBtn" onclick="togglePlay()">PLAY</button>
+        <button class="full-ctrl-btn" onclick="skipTime(10)">+10s</button>
+        <button class="full-ctrl-btn" onclick="nextEpisode()">NEXT</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const audio = new Audio();
+    let stories = [], currentStory = null, currentEpisodeIndex = -1;
+    let unlockedTokens = JSON.parse(sessionStorage.getItem('pocketfm_tokens') || '{}');
+    let pendingUnlockStory = null;
+
+    async function fetchStories() {
+      const res = await fetch('/api/stories');
+      stories = await res.json();
+      renderStories();
+    }
+
+    function renderStories() {
+      const grid = document.getElementById('storiesGrid');
+      grid.innerHTML = stories.map(s => {
+        const isUnlocked = !s.isLocked || unlockedTokens[s.id];
+        return `
+          <div class="story-card" onclick="openStory('${s.id}')">
+            <div class="cover-wrapper">
+              <img src="${s.coverUrl}" alt="${s.title}">
+              <div class="badge-lock ${isUnlocked ? 'unlocked' : 'locked'}">${isUnlocked ? 'UNLOCKED' : 'LOCKED'}</div>
+            </div>
+            <div class="story-info">
+              <div class="story-title">${s.title}</div>
+              <div class="story-author">${s.author}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function openStory(id) {
+      currentStory = stories.find(s => s.id === id);
+      const isUnlocked = !currentStory.isLocked || unlockedTokens[id];
+      if (!isUnlocked) {
+        pendingUnlockStory = currentStory;
+        document.getElementById('pinStoryTitle').innerText = currentStory.title;
+        document.getElementById('pinInput').value = '';
+        document.getElementById('pinError').style.display = 'none';
+        document.getElementById('pinModal').classList.add('active');
+        return;
+      }
+      showEpisodeDrawer();
+    }
+
+    function closePinModal() {
+      document.getElementById('pinModal').classList.remove('active');
+      pendingUnlockStory = null;
+    }
+
+    function showEpisodeDrawer() {
+      document.getElementById('drawerTitle').innerText = currentStory.title;
+      document.getElementById('drawerAuthor').innerText = currentStory.author;
+      document.getElementById('episodeList').innerHTML = currentStory.episodes.map((ep, i) => `
+        <div class="episode-item" onclick="playEpisode(${i})">
+          <div>
+            <div style="font-weight:700; font-size:0.85rem;">${ep.title}</div>
+            <div style="font-size:0.7rem; color:var(--text-muted); margin-top:2px;">${ep.filename}</div>
+          </div>
+          <span class="play-tag">PLAY</span>
+        </div>
+      `).join('');
+      document.getElementById('episodeDrawer').classList.add('open');
+    }
+
+    function closeDrawer() { document.getElementById('episodeDrawer').classList.remove('open'); }
+    function expandPlayer() { if (audio.src) document.getElementById('fullPlayer').classList.add('active'); }
+    function collapsePlayer() { document.getElementById('fullPlayer').classList.remove('active'); }
+
+    async function submitPin() {
+      const pin = document.getElementById('pinInput').value;
+      const res = await fetch(`/api/stories/${pendingUnlockStory.id}/unlock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin })
+      });
+      const data = await res.json();
+      if (data.success) {
+        unlockedTokens[pendingUnlockStory.id] = data.token;
+        sessionStorage.setItem('pocketfm_tokens', JSON.stringify(unlockedTokens));
+        closePinModal();
+        renderStories();
+        openStory(pendingUnlockStory.id);
+      } else {
+        document.getElementById('pinError').innerText = data.message;
+        document.getElementById('pinError').style.display = 'block';
+      }
+    }
+
+    function playEpisode(index) {
+      if (!currentStory || index < 0 || index >= currentStory.episodes.length) return;
+      currentEpisodeIndex = index;
+      const ep = currentStory.episodes[index];
+      const token = unlockedTokens[currentStory.id] || '';
+
+      audio.src = `/api/stories/${currentStory.id}/stream/${encodeURIComponent(ep.filename)}?token=${token}`;
+      
+      ['miniCover', 'fullCover'].forEach(id => document.getElementById(id).src = currentStory.coverUrl);
+      document.getElementById('miniTrack').innerText = ep.title;
+      document.getElementById('fullTrack').innerText = ep.title;
+      document.getElementById('miniStory').innerText = currentStory.title;
+      document.getElementById('fullStory').innerText = currentStory.title;
+
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: ep.title,
+          artist: currentStory.author,
+          album: currentStory.title,
+          artwork: [{ src: currentStory.coverUrl, sizes: '512x512', type: 'image/png' }]
+        });
+        navigator.mediaSession.setActionHandler('play', togglePlay);
+        navigator.mediaSession.setActionHandler('pause', togglePlay);
+        navigator.mediaSession.setActionHandler('seekbackward', () => skipTime(-10));
+        navigator.mediaSession.setActionHandler('seekforward', () => skipTime(10));
+        navigator.mediaSession.setActionHandler('previoustrack', prevEpisode);
+        navigator.mediaSession.setActionHandler('nexttrack', nextEpisode);
+      }
+
+      audio.play();
+      updatePlayState(true);
+      closeDrawer();
+    }
+
+    function togglePlay() {
+      if (!audio.src) return;
+      if (audio.paused) { audio.play(); updatePlayState(true); }
+      else { audio.pause(); updatePlayState(false); }
+    }
+
+    function updatePlayState(isPlaying) {
+      const btnTxt = isPlaying ? 'PAUSE' : 'PLAY';
+      document.getElementById('miniPlayBtn').innerText = btnTxt;
+      document.getElementById('fullPlayBtn').innerText = btnTxt;
+    }
+
+    function skipTime(s) { if (audio.duration) audio.currentTime = Math.min(Math.max(0, audio.currentTime + s), audio.duration); }
+    function prevEpisode() { playEpisode(currentEpisodeIndex - 1); }
+    function nextEpisode() { playEpisode(currentEpisodeIndex + 1); }
+    function onSeek() { audio.currentTime = (document.getElementById('seekBar').value / 100) * audio.duration; }
+    function changeSpeed() { audio.playbackRate = parseFloat(document.getElementById('speedSelect').value); }
+
+    audio.addEventListener('timeupdate', () => {
+      if (audio.duration) {
+        document.getElementById('seekBar').value = (audio.currentTime / audio.duration) * 100;
+        document.getElementById('currentTime').innerText = formatTime(audio.currentTime);
+        document.getElementById('duration').innerText = formatTime(audio.duration);
+      }
+    });
+
+    audio.addEventListener('ended', nextEpisode);
+
+    function formatTime(secs) {
+      const m = Math.floor(secs / 60), s = Math.floor(secs % 60);
+      return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+    }
+
+    fetchStories();
+  </script>
+</body>
+</html>
