@@ -85,9 +85,52 @@
       display: flex; justify-content: space-between; align-items: center;
     }
     .episode-list { flex: 1; overflow-y: auto; padding: 12px; }
+
+    /* Collapsible Folder Accordion */
+    .folder-group {
+      margin-bottom: 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--card-bg);
+    }
+    .folder-header {
+      padding: 12px 14px;
+      background: #252525;
+      font-weight: 800;
+      font-size: 0.85rem;
+      letter-spacing: 0.5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+    }
+    .folder-header:hover {
+      background: #2D2D2D;
+    }
+    .folder-icon {
+      font-size: 0.8rem;
+      color: var(--accent-red);
+      transition: transform 0.2s ease;
+    }
+    .folder-content {
+      display: block;
+    }
+    .folder-content.collapsed {
+      display: none;
+    }
+
     .episode-item {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 14px 10px; border-bottom: 1px solid var(--border-color);
+      padding: 12px 14px; border-bottom: 1px solid var(--border-color);
+      background: var(--card-bg);
+      cursor: pointer;
+    }
+    .episode-item:last-child {
+      border-bottom: none;
+    }
+    .episode-item:hover {
+      background: var(--card-hover);
     }
     .play-tag {
       font-size: 0.7rem; font-weight: 800; color: var(--accent-red);
@@ -138,6 +181,12 @@
       padding: 14px 28px; border-radius: 28px; border: none;
     }
     
+    .speed-btn {
+      background: #222; color: #fff; border: none;
+      padding: 6px 12px; border-radius: 8px; font-size: 0.75rem;
+      font-weight: 800; cursor: pointer; letter-spacing: 0.5px;
+    }
+
     .progress-box { width: 100%; margin: 10px 0; }
     .seek-bar { width: 100%; accent-color: var(--accent-red); }
     .time-stamps { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; font-weight: 600; }
@@ -169,7 +218,7 @@
 <body>
 
   <header>
-    <div class="logo">Best Audio Books</div>
+    <div class="logo">Best Audio/Video Books</div>
   </header>
 
   <div class="container">
@@ -220,12 +269,7 @@
     <div style="display:flex; justify-content:space-between; align-items:center;">
       <button class="text-btn" onclick="collapsePlayer()">CLOSE</button>
       <span style="font-size:0.75rem; font-weight:800; color:var(--text-muted); letter-spacing:1px;">NOW PLAYING</span>
-      <select style="background:#222; color:#fff; border:none; padding:4px 8px; border-radius:6px; font-size:0.75rem; font-weight:700;" id="speedSelect" onchange="changeSpeed()">
-        <option value="1">1.0x</option>
-        <option value="1.25">1.25x</option>
-        <option value="1.5">1.5x</option>
-        <option value="2">2.0x</option>
-      </select>
+      <button class="speed-btn" id="speedBtn" onclick="cycleSpeed()">1.0x</button>
     </div>
 
     <div class="full-cover"><img id="fullCover" src="/api/stories/fallback/cover" alt="Cover"></div>
@@ -257,6 +301,10 @@
     let stories = [], currentStory = null, currentEpisodeIndex = -1;
     let unlockedTokens = JSON.parse(sessionStorage.getItem('Audiobook_tokens') || '{}');
     let pendingUnlockStory = null;
+
+    // Speed looping logic
+    const speeds = [1.0, 1.25, 1.5, 2.0];
+    let currentSpeedIndex = 0;
 
     async function fetchStories() {
       const res = await fetch('/api/stories');
@@ -305,16 +353,52 @@
     function showEpisodeDrawer() {
       document.getElementById('drawerTitle').innerText = currentStory.title;
       document.getElementById('drawerAuthor').innerText = currentStory.author;
-      document.getElementById('episodeList').innerHTML = currentStory.episodes.map((ep, i) => `
-        <div class="episode-item" onclick="playEpisode(${i})">
-          <div>
-            <div style="font-weight:700; font-size:0.85rem;">${ep.title}</div>
-            <div style="font-size:0.7rem; color:var(--text-muted); margin-top:2px;">${ep.filename}</div>
+
+      const groups = {};
+      currentStory.episodes.forEach((ep, index) => {
+        const parts = ep.filename.split('/');
+        const folderName = parts.length > 1 ? parts.slice(0, -1).join('/') : 'Main Folder';
+        if (!groups[folderName]) groups[folderName] = [];
+        groups[folderName].push({ ...ep, index });
+      });
+
+      const groupKeys = Object.keys(groups);
+      document.getElementById('episodeList').innerHTML = groupKeys.map((folder, gIdx) => {
+        const items = groups[folder];
+        return `
+          <div class="folder-group">
+            <div class="folder-header" onclick="toggleFolder('${gIdx}')">
+              <span>${folder}</span>
+              <span class="folder-icon" id="folderIcon-${gIdx}">▼</span>
+            </div>
+            <div class="folder-content collapsed" id="folderContent-${gIdx}">
+              ${items.map(ep => `
+                <div class="episode-item" onclick="playEpisode(${ep.index})">
+                  <div style="padding-left: 8px;">
+                    <div style="font-weight:700; font-size:0.85rem;">${ep.title}</div>
+                    <div style="font-size:0.7rem; color:var(--text-muted); margin-top:2px;">${ep.filename.split('/').pop()}</div>
+                  </div>
+                  <span class="play-tag">PLAY</span>
+                </div>
+              `).join('')}
+            </div>
           </div>
-          <span class="play-tag">PLAY</span>
-        </div>
-      `).join('');
+        `;
+      }).join('');
+
       document.getElementById('episodeDrawer').classList.add('open');
+    }
+
+    function toggleFolder(groupIdx) {
+      const content = document.getElementById(`folderContent-${groupIdx}`);
+      const icon = document.getElementById(`folderIcon-${groupIdx}`);
+      if (content.classList.contains('collapsed')) {
+        content.classList.remove('collapsed');
+        icon.innerText = '▲';
+      } else {
+        content.classList.add('collapsed');
+        icon.innerText = '▼';
+      }
     }
 
     function closeDrawer() { document.getElementById('episodeDrawer').classList.remove('open'); }
@@ -347,7 +431,9 @@
       const ep = currentStory.episodes[index];
       const token = unlockedTokens[currentStory.id] || '';
 
-      audio.src = `/api/stories/${currentStory.id}/stream/${encodeURIComponent(ep.filename)}?token=${token}`;
+      const encodedFilename = ep.filename.split('/').map(encodeURIComponent).join('/');
+      audio.src = `/api/stories/${currentStory.id}/stream/${encodedFilename}?token=${token}`;
+      audio.playbackRate = speeds[currentSpeedIndex];
       
       ['miniCover', 'fullCover'].forEach(id => document.getElementById(id).src = currentStory.coverUrl);
       document.getElementById('miniTrack').innerText = ep.title;
@@ -373,6 +459,7 @@
       audio.play();
       updatePlayState(true);
       closeDrawer();
+      expandPlayer();
     }
 
     function togglePlay() {
@@ -391,7 +478,13 @@
     function prevEpisode() { playEpisode(currentEpisodeIndex - 1); }
     function nextEpisode() { playEpisode(currentEpisodeIndex + 1); }
     function onSeek() { audio.currentTime = (document.getElementById('seekBar').value / 100) * audio.duration; }
-    function changeSpeed() { audio.playbackRate = parseFloat(document.getElementById('speedSelect').value); }
+
+    function cycleSpeed() {
+      currentSpeedIndex = (currentSpeedIndex + 1) % speeds.length;
+      const speed = speeds[currentSpeedIndex];
+      audio.playbackRate = speed;
+      document.getElementById('speedBtn').innerText = `${speed.toFixed(speed % 1 === 0 ? 1 : 2)}x`;
+    }
 
     audio.addEventListener('timeupdate', () => {
       if (audio.duration) {

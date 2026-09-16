@@ -9,7 +9,7 @@ const PORT = process.env.PORT || 5050;
 // Resolve external directory using an environment variable or relative parent path
 const STORIES_DIR = process.env.AUDIO_DIR
   ? path.resolve(process.env.AUDIO_DIR)
-  : path.resolve(__dirname, '..', 'audio', 'stories');
+  : path.resolve(__dirname, '..', 'audio', 'audio');
 
 // Secret key for HMAC token generation
 const SECRET_KEY = crypto.randomBytes(32).toString('hex');
@@ -28,6 +28,30 @@ function formatTitle(str) {
 // Helper: Generate secure authorization token for a story
 function generateToken(storyId) {
   return crypto.createHmac('sha256', SECRET_KEY).update(storyId).digest('hex');
+}
+
+// Helper: Recursively search for audio files across subdirectories
+function getAudioFilesRecursive(dir, baseDir = dir) {
+  let results = [];
+  if (!fs.existsSync(dir)) return results;
+  const items = fs.readdirSync(dir, { withFileTypes: true });
+
+  for (const item of items) {
+    const fullPath = path.join(dir, item.name);
+    if (item.isDirectory()) {
+      results = results.concat(getAudioFilesRecursive(fullPath, baseDir));
+    } else if (item.isFile()) {
+      const ext = path.extname(item.name).toLowerCase();
+      if (['.mp3', '.m4a', '.wav', '.aac'].includes(ext)) {
+        const relativePath = path.relative(baseDir, fullPath).replace(/\\/g, '/');
+        results.push({
+          filename: relativePath,
+          title: formatTitle(path.parse(item.name).name)
+        });
+      }
+    }
+  }
+  return results;
 }
 
 // Helper: Read single story directory and parse config/PIN/Image URL
@@ -79,17 +103,9 @@ function getStoryMetadata(folderName) {
   // Determine lock status (0000 or empty means unlocked)
   const isLocked = pin !== '0000' && pin !== '';
 
-  // Scan Audio Files
-  const files = fs.readdirSync(storyPath);
-  const audioExtensions = ['.mp3', '.m4a', '.wav', '.aac'];
-  
-  const episodes = files
-    .filter((f) => audioExtensions.includes(path.extname(f).toLowerCase()))
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
-    .map((filename) => ({
-      filename,
-      title: formatTitle(path.parse(filename).name)
-    }));
+  // Scan Audio Files (including nested subfolders)
+  const episodes = getAudioFilesRecursive(storyPath)
+    .sort((a, b) => a.filename.localeCompare(b.filename, undefined, { numeric: true, sensitivity: 'base' }));
 
   return {
     id: folderName,
@@ -191,13 +207,20 @@ app.get('/api/stories/:storyId/cover', (req, res) => {
   res.send(svg);
 });
 
-// 4. GET /api/stories/:storyId/stream/:filename - Stream Audio with HTTP Range Requests
-app.get('/api/stories/:storyId/stream/:filename', (req, res) => {
+// 4. GET /api/stories/:storyId/stream/* - Stream Audio with HTTP Range Requests
+app.get('/api/stories/:storyId/stream/:filename(*)', (req, res) => {
   const safeStoryId = path.basename(req.params.storyId);
-  const safeFilename = path.basename(req.params.filename);
-  const filePath = path.join(STORIES_DIR, safeStoryId, safeFilename);
+  const relativeFilename = req.params.filename;
 
-  if (!fs.existsSync(filePath)) {
+  // Prevent directory traversal attacks
+  const filePath = path.normalize(path.join(STORIES_DIR, safeStoryId, relativeFilename));
+  const baseStoryDir = path.normalize(path.join(STORIES_DIR, safeStoryId));
+
+  if (!filePath.startsWith(baseStoryDir)) {
+    return res.status(403).send('Forbidden: Invalid path.');
+  }
+
+  if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
     return res.status(404).send('Audio file not found');
   }
 
@@ -218,7 +241,7 @@ app.get('/api/stories/:storyId/stream/:filename', (req, res) => {
   const fileSize = stat.size;
   const range = req.headers.range;
 
-  const ext = path.extname(safeFilename).toLowerCase();
+  const ext = path.extname(filePath).toLowerCase();
   const mimeTypes = {
     '.mp3': 'audio/mpeg',
     '.m4a': 'audio/mp4',
@@ -264,7 +287,8 @@ function autoSeedSamplesIfEmpty() {
 
     // Story 1: Shadows In The Dark (Locked with PIN 1234 & config image)
     const folder1 = path.join(STORIES_DIR, 'shadows-in-the-dark');
-    fs.mkdirSync(folder1, { recursive: true });
+    const subfolder1 = path.join(folder1, '1-100');
+    fs.mkdirSync(subfolder1, { recursive: true });
     fs.writeFileSync(
       path.join(folder1, 'config.json'),
       JSON.stringify({ 
@@ -283,8 +307,8 @@ function autoSeedSamplesIfEmpty() {
 
     // Create playable dummy WAV files (3-second sine wave tone)
     const dummyWav = createDummyWavBuffer();
-    fs.writeFileSync(path.join(folder1, '01_The_Beginning.wav'), dummyWav);
-    fs.writeFileSync(path.join(folder1, '02_The_Confrontation.wav'), dummyWav);
+    fs.writeFileSync(path.join(subfolder1, '1.wav'), dummyWav);
+    fs.writeFileSync(path.join(subfolder1, '2.wav'), dummyWav);
     fs.writeFileSync(path.join(folder2, 'episode1.wav'), dummyWav);
     fs.writeFileSync(path.join(folder2, 'episode2.wav'), dummyWav);
     console.log('Sample stories initialized successfully!');
