@@ -5,7 +5,11 @@ const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 5050;
-const STORIES_DIR = path.join(__dirname, '..', 'audio', 'stories');
+
+// Resolve external directory using an environment variable or relative parent path
+const STORIES_DIR = process.env.AUDIO_DIR
+  ? path.resolve(process.env.AUDIO_DIR)
+  : path.resolve(__dirname, '..', 'audio', 'stories');
 
 // Secret key for HMAC token generation
 const SECRET_KEY = crypto.randomBytes(32).toString('hex');
@@ -26,7 +30,7 @@ function generateToken(storyId) {
   return crypto.createHmac('sha256', SECRET_KEY).update(storyId).digest('hex');
 }
 
-// Helper: Read single story directory and parse config/PIN
+// Helper: Read single story directory and parse config/PIN/Image URL
 function getStoryMetadata(folderName) {
   const storyPath = path.join(STORIES_DIR, folderName);
   if (!fs.existsSync(storyPath) || !fs.statSync(storyPath).isDirectory()) {
@@ -34,11 +38,13 @@ function getStoryMetadata(folderName) {
   }
 
   let title = formatTitle(folderName);
-  let author = 'PocketFM Original';
+  let author = 'Audiobook';
   let pin = '0000';
+  let imageUrl = null;
 
   const configPath = path.join(storyPath, 'config.json');
   const pinPath = path.join(storyPath, 'pin.txt');
+  const coverTxtPath = path.join(storyPath, 'cover.txt');
 
   // 1. Check config.json
   if (fs.existsSync(configPath)) {
@@ -47,6 +53,7 @@ function getStoryMetadata(folderName) {
       if (conf.title) title = conf.title;
       if (conf.author) author = conf.author;
       if (conf.pin !== undefined) pin = String(conf.pin).trim();
+      if (conf.coverUrl || conf.imageUrl) imageUrl = conf.coverUrl || conf.imageUrl;
     } catch (err) {
       console.error(`Error parsing config.json in ${folderName}:`, err);
     }
@@ -57,6 +64,15 @@ function getStoryMetadata(folderName) {
       pin = fs.readFileSync(pinPath, 'utf8').trim();
     } catch (err) {
       console.error(`Error reading pin.txt in ${folderName}:`, err);
+    }
+  }
+
+  // 3. Check cover.txt if no URL was set in config.json
+  if (!imageUrl && fs.existsSync(coverTxtPath)) {
+    try {
+      imageUrl = fs.readFileSync(coverTxtPath, 'utf8').trim();
+    } catch (err) {
+      console.error(`Error reading cover.txt in ${folderName}:`, err);
     }
   }
 
@@ -79,7 +95,8 @@ function getStoryMetadata(folderName) {
     id: folderName,
     title,
     author,
-    pin, // Kept internal, stripped before API output
+    pin, // Internal only, stripped before API output
+    imageUrl,
     isLocked,
     episodes
   };
@@ -102,14 +119,13 @@ function scanAllStories() {
 // API Endpoints
 // -------------------------------------------------------------
 
-// 1. GET /api/stories - Return list of stories without PIN field
+// 1. GET /api/stories - Return list of stories without sensitive PIN field
 app.get('/api/stories', (req, res) => {
   const stories = scanAllStories();
   
-  // Omit sensitive 'pin' field from payload
-  const safeStories = stories.map(({ pin, ...rest }) => ({
+  const safeStories = stories.map(({ pin, imageUrl, ...rest }) => ({
     ...rest,
-    coverUrl: `/api/stories/${rest.id}/cover`,
+    coverUrl: imageUrl || `/api/stories/${rest.id}/cover`,
     episodeCount: rest.episodes.length
   }));
 
@@ -134,11 +150,18 @@ app.post('/api/stories/:storyId/unlock', (req, res) => {
   return res.status(401).json({ success: false, message: 'Incorrect PIN. Please try again.' });
 });
 
-// 3. GET /api/stories/:storyId/cover - Serve Cover Image or Fallback SVG
+// 3. GET /api/stories/:storyId/cover - Redirect to URL, Serve Local File, or Fallback SVG
 app.get('/api/stories/:storyId/cover', (req, res) => {
   const safeStoryId = path.basename(req.params.storyId);
   const storyPath = path.join(STORIES_DIR, safeStoryId);
+  const story = getStoryMetadata(safeStoryId);
 
+  // Direct redirect if external image URL exists
+  if (story && story.imageUrl) {
+    return res.redirect(story.imageUrl);
+  }
+
+  // Serve local image file if present in the story folder
   if (fs.existsSync(storyPath)) {
     const files = fs.readdirSync(storyPath);
     const coverFile = files.find((f) => /^cover\.(jpg|jpeg|png|webp)$/i.test(f));
@@ -148,7 +171,6 @@ app.get('/api/stories/:storyId/cover', (req, res) => {
   }
 
   // Generate dynamic SVG fallback cover
-  const story = getStoryMetadata(safeStoryId);
   const title = story ? story.title : safeStoryId;
   const svg = `
     <svg width="400" height="400" xmlns="http://www.w3.org/2000/svg">
@@ -162,7 +184,7 @@ app.get('/api/stories/:storyId/cover', (req, res) => {
       <circle cx="200" cy="160" r="50" fill="rgba(255,255,255,0.1)"/>
       <path d="M190 140 L220 160 L190 180 Z" fill="#FFFFFF"/>
       <text x="50%" y="270" font-family="Segoe UI, Roboto, sans-serif" font-size="24" font-weight="bold" fill="#ffffff" text-anchor="middle">${title}</text>
-      <text x="50%" y="300" font-family="Segoe UI, Roboto, sans-serif" font-size="14" fill="#FF334B" text-anchor="middle">POCKETFM AUDIO</text>
+      <text x="50%" y="300" font-family="Segoe UI, Roboto, sans-serif" font-size="14" fill="#FF334B" text-anchor="middle">Audiobook AUDIO</text>
     </svg>
   `;
   res.setHeader('Content-Type', 'image/svg+xml');
@@ -234,24 +256,30 @@ app.get('/api/stories/:storyId/stream/:filename', (req, res) => {
   }
 });
 
-// Helper: Auto-seed sample audio files if audio/stories is empty
+// Helper: Auto-seed sample audio files if destination directory is empty
 function autoSeedSamplesIfEmpty() {
   const allStories = scanAllStories();
   if (allStories.length === 0) {
     console.log('No stories found. Seeding sample folders and dummy WAV audio files...');
 
-    // Story 1: Shadows In The Dark (Locked with PIN 1234)
+    // Story 1: Shadows In The Dark (Locked with PIN 1234 & config image)
     const folder1 = path.join(STORIES_DIR, 'shadows-in-the-dark');
     fs.mkdirSync(folder1, { recursive: true });
     fs.writeFileSync(
       path.join(folder1, 'config.json'),
-      JSON.stringify({ title: 'Shadows in the Dark', author: 'John Doe', pin: '1234' }, null, 2)
+      JSON.stringify({ 
+        title: 'Shadows in the Dark', 
+        author: 'John Doe', 
+        pin: '1234',
+        coverUrl: 'https://picsum.photos/400/400'
+      }, null, 2)
     );
 
-    // Story 2: Romantic Vibes (Locked with pin.txt 5678)
+    // Story 2: Romantic Vibes (Locked with pin.txt & cover.txt)
     const folder2 = path.join(STORIES_DIR, 'romantic-vibes');
     fs.mkdirSync(folder2, { recursive: true });
     fs.writeFileSync(path.join(folder2, 'pin.txt'), '5678');
+    fs.writeFileSync(path.join(folder2, 'cover.txt'), 'https://picsum.photos/400/400?grayscale');
 
     // Create playable dummy WAV files (3-second sine wave tone)
     const dummyWav = createDummyWavBuffer();
@@ -293,5 +321,6 @@ function createDummyWavBuffer() {
 
 app.listen(PORT, () => {
   autoSeedSamplesIfEmpty();
-  console.log(`PocketFM Audio Application is running on http://localhost:${PORT}`);
+  console.log(`Target Stories Directory: ${STORIES_DIR}`);
+  console.log(`Audiobook Audio Application running on http://localhost:${PORT}`);
 });
